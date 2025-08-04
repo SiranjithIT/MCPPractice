@@ -3,7 +3,10 @@
 		"weather": {
 			"url": "http://127.0.0.1:8000/mcp",
 			"type": "streamable_http"
-		}
+		},
+		"playwright": {
+      "url": "http://localhost:8931/mcp"
+    }
 	},
 	"inputs": []
 }

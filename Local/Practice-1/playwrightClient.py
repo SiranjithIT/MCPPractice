@@ -26,19 +26,20 @@ from dotenv import load_dotenv
 
 load_dotenv()
 async def main():
-  SERVER_URL = "http://127.0.0.1:8000/mcp"
   PLAYWRIGHT_URL = "http://localhost:8931/mcp"
-  async with streamablehttp_client(SERVER_URL) as (read, write, _):
+  async with streamablehttp_client(PLAYWRIGHT_URL) as (read, write, _):
     async with ClientSession(read, write) as session:
       await session.initialize()
       tools = await load_mcp_tools(session)
-      #print(tools)
+      print(tools)
       model = ChatGoogleGenerativeAI(model="gemini-2.5-flash")
       agent = create_react_agent(model, tools)
       weather_result = await agent.ainvoke(
-        {"messages": [{"role": "user", "content": "what is the weather in Salem, India?"}]}
+        {"messages": [{"role": "user", "content": "List top 10 news about tariffs imposed by USA"}]}
       )
-      print("Weather result:", weather_result["messages"][-1].content)
-      
+      print("Result:", weather_result["messages"][-1].content)
       
 asyncio.run(main())
+
+#npx @playwright/mcp@latest --port 8931 
+#run the above in the terminal
