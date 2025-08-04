@@ -1,51 +1,96 @@
 """
-Weather FastMCP server example.
+Weather FastMCP server example with improved error handling.
 Run with:
-    uv run server weather_fastmcp_server stdio
+    python weather_server.py
 """
 import requests
+import logging
 from mcp.server.fastmcp import FastMCP
 
-# Create an MCP server
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 mcp = FastMCP("WeatherServer")
 
-# Add weather tool
 @mcp.tool()
 def get_weather(location: str) -> dict:
     """Get current weather for any location"""
+    logger.info(f"Getting weather for: {location}")
+    
     try:
-        response = requests.get(f"http://wttr.in/{location}?format=j1", timeout=10)
+        # Add more specific location formatting
+        formatted_location = location.replace(" ", "+")
+        url = f"http://wttr.in/{formatted_location}?format=j1"
+        logger.info(f"Requesting: {url}")
+        
+        response = requests.get(url, timeout=15)
+        logger.info(f"Response status: {response.status_code}")
         
         if response.status_code == 200:
             data = response.json()
+            
+            # Check if we have the expected data structure
+            if 'current_condition' not in data or not data['current_condition']:
+                logger.error("No current condition data in response")
+                return {"error": f"No weather data available for {location}"}
+            
             current = data['current_condition'][0]
             
-            return {
-                'location': f"{data['nearest_area'][0]['areaName'][0]['value']}, {data['nearest_area'][0]['country'][0]['value']}",
+            # Handle cases where nearest_area might be missing
+            location_name = location
+            if 'nearest_area' in data and data['nearest_area']:
+                area = data['nearest_area'][0]
+                location_name = f"{area['areaName'][0]['value']}, {area['country'][0]['value']}"
+            
+            result = {
+                'location': location_name,
                 'temperature': f"{current['temp_C']}°C ({current['temp_F']}°F)",
                 'condition': current['weatherDesc'][0]['value'],
                 'humidity': f"{current['humidity']}%",
                 'wind': f"{current['windspeedKmph']} km/h",
                 'feels_like': f"{current['FeelsLikeC']}°C ({current['FeelsLikeF']}°F)"
             }
-        else:
-            return {"error": f"Could not get weather for {location}"}
             
+            logger.info(f"Weather data retrieved successfully: {result}")
+            return result
+        else:
+            error_msg = f"Weather service returned status {response.status_code} for {location}"
+            logger.error(error_msg)
+            return {"error": error_msg}
+            
+    except requests.RequestException as e:
+        error_msg = f"Network error getting weather for {location}: {str(e)}"
+        logger.error(error_msg)
+        return {"error": error_msg}
+    except (KeyError, IndexError) as e:
+        error_msg = f"Error parsing weather data for {location}: {str(e)}"
+        logger.error(error_msg)
+        return {"error": error_msg}
     except Exception as e:
-        return {"error": str(e)}
+        error_msg = f"Unexpected error getting weather for {location}: {str(e)}"
+        logger.error(error_msg)
+        return {"error": error_msg}
 
-# Add weather forecast tool
 @mcp.tool()
 def get_forecast(location: str, days: int = 3) -> dict:
     """Get weather forecast for a location (up to 3 days)"""
+    logger.info(f"Getting forecast for: {location}, days: {days}")
+    
     try:
-        response = requests.get(f"http://wttr.in/{location}?format=j1", timeout=10)
+        formatted_location = location.replace(" ", "+")
+        url = f"http://wttr.in/{formatted_location}?format=j1"
+        
+        response = requests.get(url, timeout=15)
         
         if response.status_code == 200:
             data = response.json()
+            
+            if 'weather' not in data or not data['weather']:
+                return {"error": f"No forecast data available for {location}"}
+            
             forecast = []
             
-            # Get forecast for requested days (max 3)
             for i in range(min(days, len(data['weather']))):
                 day_data = data['weather'][i]
                 forecast.append({
@@ -56,17 +101,28 @@ def get_forecast(location: str, days: int = 3) -> dict:
                     'chance_of_rain': f"{day_data['hourly'][0]['chanceofrain']}%"
                 })
             
-            return {
-                'location': f"{data['nearest_area'][0]['areaName'][0]['value']}, {data['nearest_area'][0]['country'][0]['value']}",
+            location_name = location
+            if 'nearest_area' in data and data['nearest_area']:
+                area = data['nearest_area'][0]
+                location_name = f"{area['areaName'][0]['value']}, {area['country'][0]['value']}"
+            
+            result = {
+                'location': location_name,
                 'forecast': forecast
             }
+            
+            logger.info(f"Forecast data retrieved successfully")
+            return result
         else:
-            return {"error": f"Could not get forecast for {location}"}
+            error_msg = f"Weather service returned status {response.status_code} for {location}"
+            logger.error(error_msg)
+            return {"error": error_msg}
             
     except Exception as e:
-        return {"error": str(e)}
+        error_msg = f"Error getting forecast for {location}: {str(e)}"
+        logger.error(error_msg)
+        return {"error": error_msg}
 
-# Add dynamic weather resource
 @mcp.resource("weather://{location}")
 def get_weather_resource(location: str) -> str:
     """Get weather data as a resource"""
@@ -77,20 +133,19 @@ def get_weather_resource(location: str) -> str:
     
     return f"""Weather Report for {weather_data['location']}
 
-    Current Conditions:
-    - Temperature: {weather_data['temperature']} (feels like {weather_data['feels_like']})
-    - Condition: {weather_data['condition']}
-    - Humidity: {weather_data['humidity']}
-    - Wind Speed: {weather_data['wind']}
-    """
+Current Conditions:
+- Temperature: {weather_data['temperature']} (feels like {weather_data['feels_like']})
+- Condition: {weather_data['condition']}
+- Humidity: {weather_data['humidity']}
+- Wind Speed: {weather_data['wind']}
+"""
 
-# Add weather analysis prompt
 @mcp.prompt()
 def weather_analysis(location: str, context: str = "general") -> str:
     """Generate a weather analysis prompt"""
     contexts = {
         "travel": "Analyze the weather conditions for travel planning",
-        "outdoor": "Analyze the weather for outdoor activities",
+        "outdoor": "Analyze the weather for outdoor activities", 
         "clothing": "Suggest appropriate clothing based on weather",
         "general": "Provide a general weather analysis"
     }
@@ -98,16 +153,9 @@ def weather_analysis(location: str, context: str = "general") -> str:
     prompt_context = contexts.get(context, contexts['general'])
     
     return f"""Based on the current weather data for {location}, please {prompt_context.lower()}. 
-    Consider temperature, humidity, wind conditions, and any weather advisories. 
-    Provide practical advice and recommendations."""
-
-# Add weather comparison prompt
-@mcp.prompt()
-def compare_weather(location1: str, location2: str) -> str:
-    """Generate a prompt to compare weather between two locations"""
-    return f"""Compare the current weather conditions between {location1} and {location2}. 
-    Analyze the differences in temperature, humidity, wind, and overall conditions. 
-    Provide insights about which location has more favorable weather and for what activities."""
+Consider temperature, humidity, wind conditions, and any weather advisories. 
+Provide practical advice and recommendations."""
 
 if __name__ == "__main__":
-    mcp.run(transport="sse")
+    logger.info("Starting Weather MCP Server...")
+    mcp.run(transport="streamable-http")
