@@ -27,7 +27,6 @@ from dotenv import load_dotenv
 load_dotenv()
 async def main():
   SERVER_URL = "http://127.0.0.1:8000/mcp"
-  PLAYWRIGHT_URL = "http://localhost:8931/mcp"
   async with streamablehttp_client(SERVER_URL) as (read, write, _):
     async with ClientSession(read, write) as session:
       await session.initialize()
